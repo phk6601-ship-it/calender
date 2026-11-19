@@ -727,9 +727,15 @@ input,textarea,select{ font-family:inherit; user-select:text; -webkit-user-selec
 /* =========================================================
    ★ 선생님이 바꾸는 곳 ★
    ========================================================= */
-const CLASS_NAME = '6학년 3반';            // 첫 화면에 보이는 반 이름
-const TEACHER_PASSWORD = '1225';           // 선생님 메뉴 비밀번호 (꼭 바꿔 주세요)
-const DB_ROOT = 'advent2026';              // 데이터가 저장되는 칸 이름 (해마다 바꾸면 새로 시작)
+/* 반별 링크: 주소 끝에 ?ban=1 ~ ?ban=5 를 붙이면 그 반만의 마을이 따로 생겨요.
+   ?ban 이 없거나 ?ban=3 이면 원래 우리 반(3반) 데이터를 그대로 써요. */
+const BAN = (new URLSearchParams(location.search).get('ban') || '').replace(/\D/g, '');
+const HOME_BAN = '3';
+const IS_HOME = !BAN || BAN === HOME_BAN;
+const CLASS_NAME = IS_HOME ? '6학년 3반' : `6학년 ${BAN}반`;   // 첫 화면에 보이는 반 이름
+const TEACHER_PASSWORD = '1225';           // 선생님 메뉴 비밀번호 (모든 반 같이 씀)
+const DB_ROOT = IS_HOME ? 'advent2026' : `advent2026/ban${BAN}`;   // 반마다 따로 저장되는 칸
+const LS_PREFIX = IS_HOME ? '' : `b${BAN}_`;                       // 태블릿에 기억하는 로그인도 반마다 따로
 
 /* Firebase 실시간 데이터베이스 설정 — 비워 두면 '체험 모드'(이 기기에만 저장)로 움직여요.
    Firebase 콘솔 > 프로젝트 설정 > 내 앱(웹) 에서 복사해 붙여 넣으세요. */
@@ -2189,7 +2195,7 @@ const DB = (function(){
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const sleep = ms => new Promise(r => setTimeout(r, ms));
-const LS = { get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } }, set(k, v){ try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch(e){} } };
+const LS = { get(k){ try { return localStorage.getItem(LS_PREFIX + k); } catch(e){ return null; } }, set(k, v){ try { v == null ? localStorage.removeItem(LS_PREFIX + k) : localStorage.setItem(LS_PREFIX + k, v); } catch(e){} } };
 const hashPin = (p) => { let h = 5381; for (const c of 'advent' + p) h = ((h << 5) + h + c.charCodeAt(0)) >>> 0; return h.toString(36); };
 
 const IDEAS = [
@@ -2480,6 +2486,7 @@ async function openEditor(){
   updateMission();
 }
 function rebuildStage(){
+  if (!E.board || !E.snow || !E.cal) return;
   const st = $('#e-stage');
   E.built = renderStage(st, E.cal, { thumbs: thumbMap(E.thumbs) });
   decorateDoors();
@@ -3226,6 +3233,7 @@ async function makeSamples(k){
    시작
    ========================================================= */
 (async function boot(){
+  document.title = `${CLASS_NAME} 어드벤트 캘린더`;
   await DB.init();
   if (DB.failed) toast('⚠️ 인터넷(Firebase) 연결이 안 됐어요. 새로고침해 주세요!', 6000);
   try { const s = await DB.get('settings'); APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(s || {}) }; } catch(e){}
