@@ -468,6 +468,25 @@ input,textarea,select{ font-family:inherit; user-select:text; -webkit-user-selec
 .vs-share b{ font-family:'Jua'; font-weight:400; color:var(--gold-l); }
 body.share-mode #v-title{ justify-content:center; }
 
+/* ===================== 영상·음악 ===================== */
+.ptabs.seven{ grid-template-columns:repeat(7,1fr); gap:3px; }
+.ptabs.seven button{ font-size:11px; letter-spacing:-.5px; }
+.media-chip{ position:absolute; left:12px; top:10px; z-index:3; background:#1f6b4f; color:#fff; font-family:'Jua'; font-size:15px; padding:6px 12px; border-radius:14px; box-shadow:0 3px 0 #174d3a; }
+.media-now{ background:#e6f4ea; border-radius:14px; padding:12px; margin:8px 0 4px; display:flex; flex-direction:column; gap:8px; font-size:15px; }
+.media-now b{ font-family:'Jua'; font-weight:400; color:var(--green); }
+.yt-mini{ aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:#000; }
+.yt-mini iframe, .yt-box iframe, .yt-music iframe{ width:100%; height:100%; display:block; border:0; }
+.carol-list{ display:flex; flex-direction:column; gap:6px; }
+.carol{ display:flex; align-items:center; gap:6px; background:#fff; border-radius:12px; padding:8px 10px; font-family:'Jua'; font-size:16px; }
+.carol span{ flex:1; }
+.cv-media{ display:flex; align-items:center; justify-content:center; gap:10px; color:#fff; font-family:'Jua'; font-size:17px; flex-wrap:wrap; }
+.cvm-l{ background:rgba(255,255,255,.15); padding:6px 14px; border-radius:16px; }
+.yt-music{ width:220px; aspect-ratio:16/9; border-radius:10px; overflow:hidden; background:#000; box-shadow:0 4px 12px rgba(0,0,0,.35); }
+.content-view .stage-wrap{ position:relative; }
+.yt-ov{ position:absolute; inset:0; z-index:5; background:rgba(0,0,0,.82); border-radius:18px; display:flex; align-items:center; justify-content:center; padding:16px; }
+.yt-box{ width:100%; max-height:100%; aspect-ratio:16/9; border-radius:12px; overflow:hidden; background:#000; }
+.yt-x{ position:absolute; top:10px; right:10px; }
+
 </style>
 </head>
 <body>
@@ -610,16 +629,18 @@ body.share-mode #v-title{ justify-content:center; }
     <div class="work">
       <div class="stage-wrap" id="d-wrap">
         <div class="stage card-stage" id="d-stage"></div>
+        <div class="media-chip hidden" id="d-media-chip"></div>
         <div class="float-tools"><button class="btn sm" id="d-undo">↩ 되돌리기</button></div>
       </div>
       <aside class="panel paper">
-        <nav class="ptabs six" id="d-tabs">
+        <nav class="ptabs seven" id="d-tabs">
           <button data-tab="idea" class="on"><i>💡</i>아이디어</button>
           <button data-tab="bg"><i>🎨</i>배경</button>
           <button data-tab="sticker"><i>⭐</i>스티커</button>
           <button data-tab="photo"><i>📷</i>사진</button>
           <button data-tab="text"><i>✍️</i>글씨</button>
           <button data-tab="draw"><i>🖍️</i>그리기</button>
+          <button data-tab="media"><i>🎵</i>영상·음악</button>
         </nav>
         <div class="pbody" id="d-pbody"></div>
       </aside>
@@ -639,7 +660,8 @@ body.share-mode #v-title{ justify-content:center; }
 <div class="modal hidden" id="m-content">
   <div class="content-view">
     <div class="cv-head"><div id="cv-title"></div><button class="icon-btn" data-close>✕</button></div>
-    <div class="stage-wrap" id="cv-wrap"><div class="stage card-stage" id="cv-stage"></div></div>
+    <div class="stage-wrap" id="cv-wrap"><div class="stage card-stage" id="cv-stage"></div><div class="yt-ov hidden" id="cv-yt"></div></div>
+    <div class="cv-media hidden" id="cv-media"></div>
     <div class="cv-foot">
       <button class="btn sm" id="cv-prev">◀</button>
       <button class="heart-btn" id="cv-heart">🤍 <span>0</span></button>
@@ -2170,6 +2192,70 @@ function bakePhoto(img, frame, opts = {}){
 }
 
 /* =========================================================
+   영상·음악 (유튜브 링크 + 기본 캐럴)
+   ========================================================= */
+function parseYT(url){
+  const s = String(url || '').trim();
+  let m = s.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?(?:[^#]*&)?v=|shorts\/|embed\/|live\/|v\/))([\w-]{11})/);
+  if (!m && /^[\w-]{11}$/.test(s)) m = [0, s];
+  if (!m) return null;
+  let start = 0; const t = s.match(/[?&](?:t|start)=([\dhms]+)/);
+  if (t){ const v = t[1]; if (/^\d+$/.test(v)) start = +v; else { const h = +(v.match(/(\d+)h/) || [0, 0])[1], mi = +(v.match(/(\d+)m/) || [0, 0])[1], se = +(v.match(/(\d+)s/) || [0, 0])[1]; start = h * 3600 + mi * 60 + se; } }
+  return { id: m[1], start };
+}
+const ytEmbed = (id, start = 0, opts = {}) => `https://www.youtube-nocookie.com/embed/${id}?autoplay=${opts.autoplay ? 1 : 0}&start=${start | 0}&rel=0&playsinline=1&modestbranding=1${opts.loop ? `&loop=1&playlist=${id}` : ''}`;
+const ytFrame = (id, start, opts) => `<iframe src="${ytEmbed(id, start, opts)}" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen frameborder="0"></iframe>`;
+
+/* 저작권이 끝난 옛 캐럴을 태블릿에서 직접 연주 */
+const CAROLS = {
+  jingle: { name: '징글벨', emoji: '🔔', bpm: 190, wave: 'triangle', notes: [
+    ['E5',1],['E5',1],['E5',2],['E5',1],['E5',1],['E5',2],['E5',1],['G5',1],['C5',1.5],['D5',.5],['E5',4],
+    ['F5',1],['F5',1],['F5',1.5],['F5',.5],['F5',1],['E5',1],['E5',1],['E5',.5],['E5',.5],['E5',1],['D5',1],['D5',1],['E5',1],['D5',2],['G5',2],
+    ['E5',1],['E5',1],['E5',2],['E5',1],['E5',1],['E5',2],['E5',1],['G5',1],['C5',1.5],['D5',.5],['E5',4],
+    ['F5',1],['F5',1],['F5',1.5],['F5',.5],['F5',1],['E5',1],['E5',1],['E5',.5],['E5',.5],['G5',1],['G5',1],['F5',1],['D5',1],['C5',4],['R',2]] },
+  wish: { name: '우리 모두 크리스마스', emoji: '🎄', bpm: 160, wave: 'triangle', notes: [
+    ['G4',1],['C5',1],['C5',.5],['D5',.5],['C5',.5],['B4',.5],['A4',1],['A4',1],['A4',1],['D5',1],['D5',.5],['E5',.5],['D5',.5],['C5',.5],['B4',1],['G4',1],['G4',1],
+    ['E5',1],['E5',.5],['F5',.5],['E5',.5],['D5',.5],['C5',1],['A4',1],['G4',.5],['G4',.5],['A4',1],['D5',1],['B4',1],['C5',3],['R',2]] },
+  silent: { name: '고요한 밤', emoji: '⭐', bpm: 84, wave: 'sine', notes: [
+    ['G4',1.5],['A4',.5],['G4',1],['E4',3],['G4',1.5],['A4',.5],['G4',1],['E4',3],['D5',2],['D5',1],['B4',3],['C5',2],['C5',1],['G4',3],
+    ['A4',2],['A4',1],['C5',1.5],['B4',.5],['A4',1],['G4',1.5],['A4',.5],['G4',1],['E4',3],['A4',2],['A4',1],['C5',1.5],['B4',.5],['A4',1],['G4',1.5],['A4',.5],['G4',1],['E4',3],
+    ['D5',2],['D5',1],['F5',1.5],['D5',.5],['B4',1],['C5',3],['E5',3],['C5',1.5],['G4',.5],['E4',1],['G4',1.5],['F4',.5],['D4',1],['C4',6],['R',2]] },
+};
+const Carol = {
+  ctx: null, timer: null, nodes: [], cur: null,
+  freq(n){ const m = n.match(/^([A-G])(#?)(\d)$/); const k = { C:0, D:2, E:4, F:5, G:7, A:9, B:11 }[m[1]] + (m[2] ? 1 : 0) + (+m[3] + 1) * 12; return 440 * Math.pow(2, (k - 69) / 12); },
+  play(id){
+    this.stop(); const c = CAROLS[id]; if (!c) return;
+    try { this.ctx = this.ctx || new (window.AudioContext || window.webkitAudioContext)(); this.ctx.resume(); } catch(e){ return; }
+    this.cur = id;
+    const loop = () => {
+      const x = this.ctx, beat = 60 / c.bpm; let t = x.currentTime + .08;
+      const master = x.createGain(); master.gain.value = .22; master.connect(x.destination); this.nodes.push(master);
+      c.notes.forEach(([n, b]) => {
+        const dur = b * beat;
+        if (n !== 'R'){
+          const f = this.freq(n);
+          [[c.wave, f, 1], ['sine', f * 2, .25]].forEach(([w, fr, g]) => {
+            const o = x.createOscillator(), e = x.createGain(); o.type = w; o.frequency.value = fr;
+            e.gain.setValueAtTime(0, t); e.gain.linearRampToValueAtTime(g, t + .015); e.gain.exponentialRampToValueAtTime(.001, t + Math.max(.18, dur * .95));
+            o.connect(e); e.connect(master); o.start(t); o.stop(t + dur + .05); this.nodes.push(o);
+          });
+        }
+        t += dur;
+      });
+      this.timer = setTimeout(() => { if (this.cur === id){ this.nodes = []; loop(); } }, (t - x.currentTime) * 1000);
+    };
+    loop();
+  },
+  stop(){ clearTimeout(this.timer); this.cur = null; this.nodes.forEach(n => { try { n.stop ? n.stop() : n.disconnect(); } catch(e){} }); this.nodes = []; }
+};
+function mediaLabel(m){
+  if (!m) return '';
+  if (m.type === 'carol') return `${CAROLS[m.id]?.emoji || '🎵'} 캐럴 「${CAROLS[m.id]?.name || ''}」`;
+  return m.as === 'music' ? '🎵 유튜브 음악' : '🎬 유튜브 영상';
+}
+
+/* =========================================================
    저장소: Firebase 실시간 DB  ·  설정이 비어 있으면 '체험 모드'(이 기기에만 저장)
    ========================================================= */
 const DB = (function(){
@@ -2405,6 +2491,14 @@ async function flattenCard(data, board, W = 240){
   const x = c.getContext('2d');
   try { x.drawImage(await loadImg(ART.svgURI(ART.cardBG(data.bg || 'plain', data.bgc || '#fffaf0'))), 0, 0, c.width, c.height); } catch(e){}
   await board.flatten(x, k);
+  if (data.media){
+    const r = W * .09, cx = W - r - 6, cy = r + 6, video = data.media.type === 'yt' && data.media.as !== 'music';
+    x.fillStyle = 'rgba(0,0,0,.25)'; x.beginPath(); x.arc(cx + 1, cy + 2, r, 0, 6.3); x.fill();
+    x.fillStyle = video ? '#e62117' : '#1f6b4f'; x.beginPath(); x.arc(cx, cy, r, 0, 6.3); x.fill();
+    x.fillStyle = '#fff';
+    if (video){ x.beginPath(); x.moveTo(cx - r * .3, cy - r * .45); x.lineTo(cx + r * .5, cy); x.lineTo(cx - r * .3, cy + r * .45); x.closePath(); x.fill(); }
+    else { x.font = `bold ${r * 1.3}px sans-serif`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText('♪', cx, cy + 1); }
+  }
   return c.toDataURL('image/jpeg', .8);
 }
 
@@ -2847,9 +2941,11 @@ async function openDoorEditor(n){
   $('#d-save').textContent = raw ? '저장됨 ✓' : '';
   setDoorTab(raw ? 'sticker' : 'idea');
 }
-function setCardBG(){ $('#d-stage').style.backgroundImage = `url("${ART.svgURI(ART.cardBG(D.data.bg, D.data.bgc))}")`; }
+function setCardBG(){ $('#d-stage').style.backgroundImage = `url("${ART.svgURI(ART.cardBG(D.data.bg, D.data.bgc))}")`; mediaChip(); }
+function mediaChip(){ const m = D.data && D.data.media, el = $('#d-media-chip'); el.classList.toggle('hidden', !m); el.innerHTML = m ? `${mediaLabel(m)} 들어 있어요` : ''; }
 $('#d-tabs').onclick = e => { const b = e.target.closest('[data-tab]'); if (b) setDoorTab(b.dataset.tab); };
 function setDoorTab(t){
+  if (t !== 'media') Carol.stop();
   D.tab = t; $$('#d-tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === t));
   D.board.setMode(t === 'draw' ? 'draw' : 'select');
   const P = $('#d-pbody');
@@ -2876,6 +2972,7 @@ function setDoorTab(t){
     };
     return;
   }
+  if (t === 'media'){ return panelMedia(P); }
   if (t === 'idea'){
     const mine = IDEAS[(D.n - 1) % IDEAS.length];
     P.innerHTML = `<p class="hint">무엇을 넣을지 고민될 때 골라 보세요. 누르면 제목이 카드 위에 붙어요!</p>
@@ -2890,6 +2987,35 @@ function setDoorTab(t){
     };
   }
 }
+function panelMedia(P){
+  const m = D.data.media;
+  P.innerHTML = `
+    <p class="hint">문 속에 <b>영상이나 음악을 하나</b> 넣을 수 있어요. 친구가 문을 열면 같이 나와요!</p>
+    ${m ? `<div class="media-now"><b>지금 들어 있는 것</b><div>${mediaLabel(m)}</div>
+      ${m.type === 'yt' ? `<div class="yt-mini">${ytFrame(m.id, m.start, {})}</div>` : ''}
+      <div class="row gap wrap">${m.type === 'carol' ? `<button class="btn sm green" data-act="cplay">▶ 들어 보기</button><button class="btn sm" data-act="cstop">⏹ 멈추기</button>` : ''}<button class="btn sm red" data-act="remove">🗑 빼기</button></div></div>` : ''}
+    ${sec('🎬 유튜브 링크 넣기', `<input class="inp" id="yt-url" placeholder="https://youtu.be/... 링크를 붙여 넣어요" inputmode="url" autocomplete="off">
+      <p class="lbl">친구가 문을 열면</p>
+      <div class="chips"><button class="chip on" data-as="video">🎬 영상으로 보여 주기</button><button class="chip" data-as="music">🎵 음악처럼 바로 틀어 주기</button></div>
+      <button class="btn red full" data-act="yt" style="margin-top:10px">넣기</button>
+      <p class="hint">유튜브 앱에서 <b>공유 → 링크 복사</b>를 누른 뒤 여기에 붙여 넣어요.<br>‘1분 20초부터’처럼 시작 시간이 있는 링크도 돼요.</p>`)}
+    ${sec('🎄 기본 캐럴 <small>(광고 없이 바로 나와요)</small>', `<div class="carol-list">${Object.entries(CAROLS).map(([id, c]) => `<div class="carol"><span>${c.emoji} ${c.name}</span><button class="btn xs" data-cp="${id}">▶ 듣기</button><button class="btn xs green" data-cset="${id}">넣기</button></div>`).join('')}</div>`)}`;
+  let as = 'video';
+  P.onclick = e => {
+    const a = e.target.closest('[data-as]'); if (a){ as = a.dataset.as; $$('[data-as]', P).forEach(x => x.classList.toggle('on', x === a)); return; }
+    const cp = e.target.closest('[data-cp]'); if (cp){ Carol.cur === cp.dataset.cp ? Carol.stop() : Carol.play(cp.dataset.cp); return; }
+    const cs = e.target.closest('[data-cset]'); if (cs){ Carol.stop(); D.data.media = { type: 'carol', id: cs.dataset.cset }; doorDirty(); mediaChip(); panelMedia(P); toast(`🎵 「${CAROLS[cs.dataset.cset].name}」을 넣었어요`); return; }
+    const b = e.target.closest('[data-act]'); if (!b) return;
+    if (b.dataset.act === 'yt'){
+      const r = parseYT($('#yt-url').value);
+      if (!r){ toast('유튜브 링크가 아닌 것 같아요 😢<br><small>youtu.be/… 또는 youtube.com/… 링크를 붙여 넣어 주세요</small>', 3500); return; }
+      D.data.media = { type: 'yt', id: r.id, start: r.start, as }; doorDirty(); mediaChip(); panelMedia(P); toast(as === 'music' ? '🎵 음악을 넣었어요' : '🎬 영상을 넣었어요');
+    }
+    if (b.dataset.act === 'cplay') Carol.play(m.id);
+    if (b.dataset.act === 'cstop') Carol.stop();
+    if (b.dataset.act === 'remove'){ Carol.stop(); delete D.data.media; D.data.media = null; doorDirty(); mediaChip(); panelMedia(P); }
+  };
+}
 function doorDirty(){ D.dirty = true; $('#d-save').textContent = '저장 중…'; clearTimeout(D.saveT); D.saveT = setTimeout(() => saveDoor(), 1500); }
 async function saveDoor(){
   clearTimeout(D.saveT); if (!D.board || !D.n || !D.dirty) return;
@@ -2897,7 +3023,7 @@ async function saveDoor(){
   const d = { ...D.data, ...b.data(), ts: Date.now() };
   D.dirty = false; APP.pending = (APP.pending || 0) + 1;
   try {
-    if (b.isEmpty()){
+    if (b.isEmpty() && !d.media){
       delete E.thumbs['d' + n];
       await Promise.all([DB.remove(`doors/${uid}/d${n}`), DB.remove(`doorThumbs/${uid}/d${n}`), DB.update('users/' + uid, { filled: Object.keys(E.thumbs).length })]);
     } else {
@@ -2922,6 +3048,7 @@ window.addEventListener('beforeunload', e => {
   flushNow(); e.preventDefault(); e.returnValue = '';
 });
 async function closeDoorEditor(){
+  Carol.stop();
   await saveDoor();
   closeModal('m-door'); if (D.board){ D.board.destroy(); D.board = null; } D.n = 0;
   rebuildStage(); if (E.tab === 'fill') panelFill(); updateMission();
@@ -3137,7 +3264,23 @@ async function showContent(){
   $('#cv-prev').disabled = C.i <= 0; $('#cv-next').disabled = C.i >= C.seq.length - 1;
   $('#cv-del').classList.toggle('hidden', !C.teacher);
   if (C.teacher) $('#cv-title').insertAdjacentHTML('beforeend', ` <small class="cv-count">${C.i + 1} / ${C.seq.length}</small>`);
+  showMedia(d.media);
   await refreshHeart();
+}
+function stopMedia(){ Carol.stop(); $('#cv-yt').innerHTML = ''; $('#cv-yt').classList.add('hidden'); $('#cv-media').innerHTML = ''; $('#cv-media').classList.add('hidden'); }
+function showMedia(m){
+  stopMedia(); if (!m) return;
+  const box = $('#cv-media'); box.classList.remove('hidden');
+  if (m.type === 'carol'){
+    box.innerHTML = `<span class="cvm-l">${mediaLabel(m)}</span><button class="btn sm" id="cvm-tog">⏸ 멈추기</button>`;
+    Carol.play(m.id);
+    $('#cvm-tog').onclick = () => { if (Carol.cur){ Carol.stop(); $('#cvm-tog').textContent = '▶ 다시 듣기'; } else { Carol.play(m.id); $('#cvm-tog').textContent = '⏸ 멈추기'; } };
+  } else if (m.as === 'music'){
+    box.innerHTML = `<span class="cvm-l">🎵 친구가 고른 음악</span><div class="yt-music">${ytFrame(m.id, m.start, { autoplay: true, loop: true })}</div>`;
+  } else {
+    box.innerHTML = `<button class="btn red" id="cvm-video">▶ 친구가 넣은 영상 보기</button>`;
+    $('#cvm-video').onclick = () => { const ov = $('#cv-yt'); ov.innerHTML = `<div class="yt-box">${ytFrame(m.id, m.start, { autoplay: true })}</div><button class="icon-btn yt-x" id="cvm-x">✕</button>`; ov.classList.remove('hidden'); $('#cvm-x').onclick = () => { ov.innerHTML = ''; ov.classList.add('hidden'); }; };
+  }
 }
 async function refreshHeart(){
   const [uid, n] = C.seq[C.i]; const h = await DB.get(`hearts/${uid}/d${n}`) || {};
@@ -3169,7 +3312,7 @@ async function deleteDoor(uid, n){
 }
 $('#cv-prev').onclick = () => { if (C.i > 0){ C.i--; showContent(); } };
 $('#cv-next').onclick = () => { if (C.i < C.seq.length - 1){ C.i++; showContent(); } };
-$('#m-content').addEventListener('click', e => { if (e.target.closest('[data-close]') || e.target.id === 'm-content'){ closeModal('m-content'); if (C.onClose) C.onClose(); } });
+$('#m-content').addEventListener('click', e => { if (e.target.closest('[data-close]') || e.target.id === 'm-content'){ stopMedia(); closeModal('m-content'); if (C.onClose) C.onClose(); } });
 
 /* =========================================================
    선생님
