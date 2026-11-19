@@ -430,6 +430,26 @@ input,textarea,select{ font-family:inherit; user-select:text; -webkit-user-selec
   .nav{ font-size:15px; padding:8px 10px; }
 }
 
+/* ===================== 전체 한눈에 보기 ===================== */
+.ov{ position:absolute; inset:0; display:flex; flex-direction:column; }
+.ov-info{ font-size:14px; opacity:.9; }
+.ov-hint{ max-width:none; margin:0 0 10px; }
+.ov-table-wrap{ overflow:auto; background:var(--cream); border-radius:16px; box-shadow:var(--shadow); max-height:calc(100vh - 150px); }
+.ov-table{ border-collapse:separate; border-spacing:3px; font-size:13px; }
+.ov-table th{ position:sticky; top:0; background:var(--cream); z-index:2; font-family:'Jua'; font-weight:400; font-size:14px; padding:4px 2px; color:var(--brown); }
+.ov-table th small{ display:block; font-family:'Gowun Dodum'; font-size:10px; color:var(--ink-l); }
+.ov-table th.now{ background:var(--gold); border-radius:8px; } .ov-table th.past{ color:var(--green); }
+.ov-name{ position:sticky; left:0; background:var(--cream); z-index:1; white-space:nowrap; text-align:left; padding:0 8px 0 4px; font-family:'Jua'; font-size:15px; }
+.ov-table thead .ov-name{ z-index:3; }
+.ov-cnt{ white-space:nowrap; padding:0 6px; color:var(--ink-l); } .ov-cnt b{ font-family:'Jua'; font-weight:400; font-size:16px; color:var(--ink); } .ov-cnt b.full{ color:var(--green); } .ov-cnt b.low{ color:var(--red); }
+.ov-c{ width:46px; min-width:46px; height:58px; padding:0; border-radius:7px; background:#fff; text-align:center; vertical-align:middle; box-shadow:inset 0 0 0 1.5px #eadcc3; }
+.ov-c i{ font-style:normal; color:#d9c3a0; }
+.ov-c.has{ cursor:pointer; box-shadow:none; overflow:hidden; }
+.ov-c.has img{ width:46px; height:58px; object-fit:cover; display:block; border-radius:7px; }
+.ov-c.has:active{ transform:scale(.94); }
+.ov-load{ display:inline-block; width:10px; height:10px; border-radius:50%; background:#eadcc3; animation:twinkle 1s infinite; }
+.cv-count{ font-family:'Gowun Dodum'; font-size:14px; opacity:.8; }
+
 </style>
 </head>
 <body>
@@ -582,6 +602,14 @@ input,textarea,select{ font-family:inherit; user-select:text; -webkit-user-selec
   </div>
 </div>
 
+<!-- 전체 한눈에 보기 (선생님) -->
+<div class="modal full hidden" id="m-overview">
+  <div class="ov">
+    <header class="topbar"><h2 class="tb-title">🗂️ 전체 한눈에 보기</h2><span class="ov-info" id="ov-info"></span><div class="tb-right"><button class="btn sm" id="ov-reload">🔄 새로고침</button><button class="btn sm" data-close>✕ 닫기</button></div></header>
+    <div class="scroll"><p class="hint ov-hint">칸을 누르면 크게 볼 수 있고, 거기서 <b>🗑 문 속 지우기</b>를 할 수 있어요. ◀ ▶ 로 모든 학생의 문 속을 차례로 넘겨 볼 수 있어요.</p><div class="ov-table-wrap"><table class="ov-table" id="ov-table"></table></div></div>
+  </div>
+</div>
+
 <!-- 문 속 보기 -->
 <div class="modal hidden" id="m-content">
   <div class="content-view">
@@ -591,6 +619,7 @@ input,textarea,select{ font-family:inherit; user-select:text; -webkit-user-selec
       <button class="btn sm" id="cv-prev">◀</button>
       <button class="heart-btn" id="cv-heart">🤍 <span>0</span></button>
       <button class="btn sm" id="cv-next">▶</button>
+      <button class="btn sm red hidden" id="cv-del">🗑 문 속 지우기</button>
     </div>
   </div>
 </div>
@@ -705,13 +734,13 @@ const DB_ROOT = 'advent2026';              // 데이터가 저장되는 칸 이�
 /* Firebase 실시간 데이터베이스 설정 — 비워 두면 '체험 모드'(이 기기에만 저장)로 움직여요.
    Firebase 콘솔 > 프로젝트 설정 > 내 앱(웹) 에서 복사해 붙여 넣으세요. */
 const FIREBASE_CONFIG = {
-  apiKey: '',
-  authDomain: '',
-  databaseURL: '',
-  projectId: '',
-  storageBucket: '',
-  messagingSenderId: '',
-  appId: ''
+  apiKey: "AIzaSyBGeoUHm3P6_SnodXkL4pPe0ELxBKow7WE",
+  authDomain: "paperboom.firebaseapp.com",
+  databaseURL: "https://paperboom-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "paperboom",
+  storageBucket: "paperboom.firebasestorage.app",
+  messagingSenderId: "128502426641",
+  appId: "1:128502426641:web:433b6d35066051f076d5b0"
 };
 
 /* 문이 열리기 시작하는 날과 쉬는 날(주말은 자동으로 빠져요). 선생님 메뉴에서도 바꿀 수 있어요. */
@@ -2131,8 +2160,11 @@ const DB = (function(){
         try {
           await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js');
           await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js');
-          firebase.initializeApp(FIREBASE_CONFIG); fb = firebase.database(); api.mode = 'firebase'; return;
-        } catch(e){ console.warn('Firebase 연결 실패 → 체험 모드', e); }
+          await loadScript('https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js');
+          firebase.initializeApp(FIREBASE_CONFIG);
+          await firebase.auth().signInAnonymously();
+          fb = firebase.database(); api.mode = 'firebase'; return;
+        } catch(e){ console.warn('Firebase 연결 실패 → 이 기기에만 저장', e); api.failed = true; }
       }
       idb = await openIDB(); await loadIDB(); api.mode = 'demo';
     },
@@ -2341,7 +2373,8 @@ function buildLanding(){
   else if (oc >= 24) msg = `🎅 24개 문이 모두 열렸어요! 메리 크리스마스!`;
   else { const nx = nextOpen(); msg = `⛄ 오늘은 쉬는 날 · 지금까지 <b>${oc}개</b> 열렸어요${nx ? `<br><small>다음 문은 ${fmtDate(nx.date)}</small>` : ''}`; }
   $('#land-dday').innerHTML = msg;
-  $('#mode-note').innerHTML = DB.mode === 'demo' ? '🧪 체험 모드 — 지금은 이 기기에만 저장돼요 (Firebase를 연결하면 반 전체가 함께 써요)' : '';
+  $('#mode-note').innerHTML = DB.failed ? '<b style="color:#c8323c">⚠️ 인터넷(Firebase) 연결이 안 됐어요 — 지금 꾸민 건 이 태블릿에만 저장돼요. 새로고침해 주세요!</b>'
+    : DB.mode === 'demo' ? '🧪 체험 모드 — 지금은 이 기기에만 저장돼요 (Firebase를 연결하면 반 전체가 함께 써요)' : '';
 }
 $('#go-create').onclick = () => {
   $('#c-name').value = ''; $('#c-pin').value = '';
@@ -2961,7 +2994,9 @@ function tapViewDoor(n){
   if (!V.thumbs['d' + n]){ el.classList.remove('shake'); void el.offsetWidth; el.classList.add('shake'); toast('😮 이 문은 아직 비어 있어요'); return; }
   el.classList.add('open');
   const seq = Array.from({ length: oc }, (_, i) => i + 1).filter(k => V.thumbs['d' + k]).map(k => [V.uid, k]);
-  setTimeout(() => openContent(V.uid, n, { seq, onClose: () => el.classList.remove('open') }), 650);
+  const teacher = V.all && !V.owner;
+  setTimeout(() => openContent(V.uid, n, { seq, teacher, onClose: () => el.classList.remove('open'),
+    onDelete: (u, k) => { delete V.thumbs['d' + k]; const d = V.built.doors[k]; if (d){ d.classList.remove('ajar', 'open'); const im = d.querySelector('.d-in'); if (im) im.innerHTML = '<span class="d-empty">✦</span>'; } $$(`#v-side .vs-d[data-n="${k}"]`).forEach(x => x.remove()); } }), 650);
 }
 $('#v-back').onclick = () => { if (V.snow) V.snow.stop(); V.back === 'teacher' ? openTeacherScreen() : V.back === 'edit' ? openEditor() : openGallery(); };
 $('#v-prev').onclick = () => { const i = G.order.indexOf(V.uid); openViewer(G.order[(i - 1 + G.order.length) % G.order.length], { all: V.all, back: V.back }); };
@@ -2971,6 +3006,7 @@ $('#v-next').onclick = () => { const i = G.order.indexOf(V.uid); openViewer(G.or
 const C = { seq: [], i: 0, board: null, onClose: null };
 async function openContent(uid, n, o = {}){
   C.seq = o.seq || [[uid, n]]; C.i = Math.max(0, C.seq.findIndex(x => x[0] === uid && x[1] === n)); C.onClose = o.onClose || null;
+  C.teacher = !!o.teacher; C.onDelete = o.onDelete || null;
   openModal('m-content'); await showContent();
 }
 async function showContent(){
@@ -2986,6 +3022,8 @@ async function showContent(){
   fit($('#cv-wrap'), st, ART.cardW, ART.cardH, 16);
   $('#cv-title').innerHTML = `<span class="num-badge">${n}</span> 번 문 <span class="from">From. ${avatarImg(u.avatar, 28)} ${esc(u.name || '')}</span>`;
   $('#cv-prev').disabled = C.i <= 0; $('#cv-next').disabled = C.i >= C.seq.length - 1;
+  $('#cv-del').classList.toggle('hidden', !C.teacher);
+  if (C.teacher) $('#cv-title').insertAdjacentHTML('beforeend', ` <small class="cv-count">${C.i + 1} / ${C.seq.length}</small>`);
   await refreshHeart();
 }
 async function refreshHeart(){
@@ -3000,6 +3038,22 @@ $('#cv-heart').onclick = async () => {
   if (!cur){ const b = $('#cv-heart'); b.classList.remove('beat'); void b.offsetWidth; b.classList.add('beat'); }
   refreshHeart();
 };
+$('#cv-del').onclick = async () => {
+  const [uid, n] = C.seq[C.i], u = G.users[uid] || {};
+  if (!await confirmBox(`<b>${esc(u.name || '')}</b>의 <b>${n}번 문 속</b>을 지울까요?<br><small>지우면 되돌릴 수 없어요. 학생은 다시 채울 수 있어요.</small>`)) return;
+  await deleteDoor(uid, n);
+  toast(`${esc(u.name || '')} ${n}번 문 속을 지웠어요`);
+  if (C.onDelete) C.onDelete(uid, n);
+  C.seq.splice(C.i, 1);
+  if (!C.seq.length){ closeModal('m-content'); if (C.onClose) C.onClose(); return; }
+  C.i = Math.min(C.i, C.seq.length - 1); showContent();
+};
+async function deleteDoor(uid, n){
+  await DB.remove(`doors/${uid}/d${n}`); await DB.remove(`doorThumbs/${uid}/d${n}`); await DB.remove(`hearts/${uid}/d${n}`);
+  const rest = await DB.get('doorThumbs/' + uid) || {};
+  await DB.update('users/' + uid, { filled: Object.keys(rest).length });
+  if (G.users[uid]) G.users[uid].filled = Object.keys(rest).length;
+}
 $('#cv-prev').onclick = () => { if (C.i > 0){ C.i--; showContent(); } };
 $('#cv-next').onclick = () => { if (C.i < C.seq.length - 1){ C.i++; showContent(); } };
 $('#m-content').addEventListener('click', e => { if (e.target.closest('[data-close]') || e.target.id === 'm-content'){ closeModal('m-content'); if (C.onClose) C.onClose(); } });
@@ -3024,7 +3078,7 @@ async function openTeacherScreen(){
   $('#t-body').innerHTML = `
     <div class="t-card paper t-top">
       <div><b>오늘</b> ${fmtDate(today())} ${tdOverride ? '<em class="warn">미리보기 날짜</em>' : ''}<br>${td ? `🎁 오늘은 <b>${td}번 문</b>이 열리는 날` : '오늘 새로 열리는 문 없음'} · 지금까지 <b>${oc}개</b> 열림</div>
-      <div class="row gap wrap"><button class="btn red" id="t-slides">📺 오늘의 문 슬라이드쇼</button><button class="btn ${st.lock ? 'green' : ''}" id="t-lock">${st.lock ? '🔓 꾸미기 다시 열기' : '🔒 꾸미기 잠그기'}</button></div>
+      <div class="row gap wrap"><button class="btn red" id="t-slides">📺 오늘의 문 슬라이드쇼</button><button class="btn green" id="t-overview">🗂️ 전체 한눈에 보기</button><button class="btn ${st.lock ? 'green' : ''}" id="t-lock">${st.lock ? '🔓 꾸미기 다시 열기' : '🔒 꾸미기 잠그기'}</button></div>
       <div class="mode-note">${DB.mode === 'demo' ? '🧪 체험 모드: 데이터가 이 기기에만 저장돼요. 반 전체가 함께 쓰려면 파일 맨 위 FIREBASE_CONFIG를 채워 주세요.' : '☁️ Firebase에 연결되어 반 전체가 함께 쓰는 중'}</div>
     </div>
     <div class="t-card paper">
@@ -3069,9 +3123,36 @@ async function openTeacherScreen(){
     if (e.target.closest('#t-test-ok')){ const v = $('#t-test').value; if (v){ LS.set('advent_testdate', v); toast(`${fmtDate(v)}인 것처럼 보여요`); openTeacherScreen(); } return; }
     if (e.target.closest('#t-test-off')){ LS.set('advent_testdate', null); toast('미리보기 날짜를 해제했어요'); openTeacherScreen(); return; }
     if (e.target.closest('#t-slides')){ openSlides(); return; }
+    if (e.target.closest('#t-overview')){ openOverview(); return; }
     if (e.target.closest('#t-sample')){ e.target.disabled = true; e.target.textContent = '만드는 중…'; await makeSamples(3); openTeacherScreen(); }
   };
 }
+
+/* ---------- 전체 한눈에 보기 ---------- */
+const OV = { thumbs: {} };
+async function openOverview(){
+  openModal('m-overview');
+  const td = todayDoor(), oc = openCount();
+  $('#ov-table').innerHTML = `<thead><tr><th class="ov-name">학생</th><th>채움</th>${Array.from({ length: 24 }, (_, i) => `<th class="${i + 1 === td ? 'now' : i + 1 <= oc ? 'past' : ''}" title="${fmtDate(doorDates()[i])}">${i + 1}<small>${doorDates()[i].slice(5).replace('-', '/')}</small></th>`).join('')}</tr></thead>
+    <tbody>${G.order.map(uid => { const u = G.users[uid]; return `<tr data-uid="${uid}"><td class="ov-name">${avatarImg(u.avatar, 28)} <b>${esc(u.name)}</b></td><td class="ov-cnt">…</td>${Array.from({ length: 24 }, (_, i) => `<td class="ov-c" data-n="${i + 1}"><span class="ov-load"></span></td>`).join('')}</tr>`; }).join('') || '<tr><td class="hint">아직 학생이 없어요</td></tr>'}</tbody>`;
+  $('#ov-info').textContent = `${G.order.length}명 · 노란 칸 = 오늘 열리는 문`;
+  OV.thumbs = {};
+  await Promise.all(G.order.map(async uid => { OV.thumbs[uid] = await DB.get('doorThumbs/' + uid) || {}; ovRow(uid); }));
+}
+function ovRow(uid){
+  const tr = $(`#ov-table tr[data-uid="${uid}"]`); if (!tr) return;
+  const t = OV.thumbs[uid] || {}, cnt = Object.keys(t).length;
+  tr.querySelector('.ov-cnt').innerHTML = `<b class="${cnt >= 24 ? 'full' : cnt < 12 ? 'low' : ''}">${cnt}</b>/24`;
+  $$('.ov-c', tr).forEach(td => { const n = +td.dataset.n, th = t['d' + n]; td.classList.toggle('has', !!th); td.innerHTML = th ? `<img src="${th}" alt="">` : '<i>·</i>'; });
+}
+function ovSeq(){ const seq = []; G.order.forEach(uid => { for (let n = 1; n <= 24; n++) if ((OV.thumbs[uid] || {})['d' + n]) seq.push([uid, n]); }); return seq; }
+$('#ov-table').addEventListener('click', e => {
+  const td = e.target.closest('.ov-c.has'); if (!td) return;
+  const uid = td.closest('tr').dataset.uid, n = +td.dataset.n;
+  openContent(uid, n, { seq: ovSeq(), teacher: true, onDelete: (u, k) => { delete OV.thumbs[u]['d' + k]; ovRow(u); } });
+});
+$('#ov-reload').onclick = () => openOverview();
+$('#m-overview').addEventListener('click', e => { if (e.target.closest('[data-close]')) openTeacherScreen(); });
 
 /* ---------- 슬라이드쇼 ---------- */
 const SL = { list: [], i: 0, n: 1, timer: null, play: true, board: null };
@@ -3146,6 +3227,7 @@ async function makeSamples(k){
    ========================================================= */
 (async function boot(){
   await DB.init();
+  if (DB.failed) toast('⚠️ 인터넷(Firebase) 연결이 안 됐어요. 새로고침해 주세요!', 6000);
   try { const s = await DB.get('settings'); APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(s || {}) }; } catch(e){}
   buildLanding();
   show('landing');
