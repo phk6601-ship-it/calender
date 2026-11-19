@@ -2609,16 +2609,20 @@ function markDirty(){
   clearTimeout(E.saveT); E.saveT = setTimeout(() => saveCal(), 1300);
   updateMission();
 }
-async function saveCal(force){
-  if (!APP.me || !E.cal) return;
+async function saveCal(force, quick){
+  if (!APP.me || !E.cal || !E.board) return;
   clearTimeout(E.saveT);
   const d = E.board.data(); E.cal.items = d.items; E.cal.draw = d.draw; E.cal.ts = Date.now();
+  APP.pending = (APP.pending || 0) + 1;
   try {
-    await DB.set('cals/' + APP.me.uid, E.cal);
-    E.dirty = false;
-    if (force || Date.now() - E.lastThumb > 20000){ E.lastThumb = Date.now(); const th = await flattenHouse(E.cal, E.board, 420); await DB.set('houseThumbs/' + APP.me.uid, th); }
+    const wasDirty = E.dirty; E.dirty = false;
+    const w = DB.set('cals/' + APP.me.uid, E.cal);
+    if (quick){ await w; if (wasDirty || force){ E.thumbDue = true; } $('#e-save').textContent = '저장됨 ✓'; $('#e-save').classList.remove('ing'); return; }
+    await w;
+    if (force || E.thumbDue || Date.now() - E.lastThumb > 20000){ E.thumbDue = false; E.lastThumb = Date.now(); const th = await flattenHouse(E.cal, E.board, 420); await DB.set('houseThumbs/' + APP.me.uid, th); }
     $('#e-save').textContent = '저장됨 ✓'; $('#e-save').classList.remove('ing');
-  } catch(e){ console.error(e); $('#e-save').textContent = '⚠️ 저장 안 됨'; toast('저장이 안 됐어요. 인터넷 연결을 확인해 주세요'); }
+  } catch(e){ console.error(e); E.dirty = true; $('#e-save').textContent = '⚠️ 저장 안 됨'; toast('저장이 안 됐어요. 인터넷 연결을 확인해 주세요'); }
+  finally { APP.pending--; }
 }
 async function flushEditor(){ if (APP.me && !APP.me.done && E.cal && E.board && curScreen === 'edit') await saveCal(true); }
 function setHouse(k, v){
@@ -2891,18 +2895,32 @@ async function saveDoor(){
   clearTimeout(D.saveT); if (!D.board || !D.n || !D.dirty) return;
   const n = D.n, uid = APP.me.uid, b = D.board;
   const d = { ...D.data, ...b.data(), ts: Date.now() };
+  D.dirty = false; APP.pending = (APP.pending || 0) + 1;
   try {
     if (b.isEmpty()){
-      await DB.remove(`doors/${uid}/d${n}`); await DB.remove(`doorThumbs/${uid}/d${n}`); delete E.thumbs['d' + n];
+      delete E.thumbs['d' + n];
+      await Promise.all([DB.remove(`doors/${uid}/d${n}`), DB.remove(`doorThumbs/${uid}/d${n}`), DB.update('users/' + uid, { filled: Object.keys(E.thumbs).length })]);
     } else {
-      await DB.set(`doors/${uid}/d${n}`, d);
-      const th = await flattenCard(d, b, 240); await DB.set(`doorThumbs/${uid}/d${n}`, th); E.thumbs['d' + n] = th;
+      const th = await flattenCard(d, b, 240); E.thumbs['d' + n] = th;
+      await Promise.all([DB.set(`doors/${uid}/d${n}`, d), DB.set(`doorThumbs/${uid}/d${n}`, th), DB.update('users/' + uid, { filled: Object.keys(E.thumbs).length })]);
     }
-    D.dirty = false;
-    await DB.update('users/' + uid, { filled: Object.keys(E.thumbs).length });
     if (D.n === n) $('#d-save').textContent = '저장됨 ✓';
-  } catch(e){ console.error(e); $('#d-save').textContent = '⚠️ 저장 안 됨'; }
+  } catch(e){ console.error(e); D.dirty = true; $('#d-save').textContent = '⚠️ 저장 안 됨'; }
+  finally { APP.pending--; }
 }
+/* 창을 닫거나 다른 앱으로 넘어갈 때 바로 저장 */
+function flushNow(){
+  if (!APP.me || APP.me.done) return;
+  if (D.board && D.n && D.dirty) saveDoor();
+  if (E.cal && E.board && E.dirty) saveCal(false, true);
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') flushNow(); });
+window.addEventListener('pagehide', flushNow);
+window.addEventListener('beforeunload', e => {
+  const busy = (E.dirty || D.dirty || APP.pending > 0) && APP.me && !APP.me.done;
+  if (!busy) return;
+  flushNow(); e.preventDefault(); e.returnValue = '';
+});
 async function closeDoorEditor(){
   await saveDoor();
   closeModal('m-door'); if (D.board){ D.board.destroy(); D.board = null; } D.n = 0;
