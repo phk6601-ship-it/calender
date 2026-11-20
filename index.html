@@ -790,11 +790,16 @@ body.share-mode #v-title{ justify-content:center; }
    ?ban 이 없거나 ?ban=3 이면 원래 우리 반(3반) 데이터를 그대로 써요. */
 const BAN = (new URLSearchParams(location.search).get('ban') || '').replace(/\D/g, '');
 const HOME_BAN = '3';
-const IS_HOME = !BAN || BAN === HOME_BAN;
-const CLASS_NAME = IS_HOME ? '6학년 3반' : `6학년 ${BAN}반`;   // 첫 화면에 보이는 반 이름
+/* 따로 쓰는 반(다른 학교 등): 주소 끝에 ?c=코드 — 아래 목록에 있는 코드만 열려요 */
+const SPACES = { 'w7mk2q': '6학년' };
+const SPACE = (new URLSearchParams(location.search).get('c') || '').toLowerCase();
+const IN_SPACE = !!SPACE;
+const SPACE_OK = !IN_SPACE || Object.prototype.hasOwnProperty.call(SPACES, SPACE);
+const IS_HOME = !IN_SPACE && (!BAN || BAN === HOME_BAN);
+const CLASS_NAME = IN_SPACE ? (SPACES[SPACE] || '') : IS_HOME ? '6학년 3반' : `6학년 ${BAN}반`;   // 첫 화면 반 이름 (선생님 메뉴에서 바꿀 수 있어요)
 const TEACHER_PASSWORD = '1225';           // 선생님 메뉴 비밀번호 (모든 반 같이 씀)
-const DB_ROOT = IS_HOME ? 'advent2026' : `advent2026/ban${BAN}`;   // 반마다 따로 저장되는 칸
-const LS_PREFIX = IS_HOME ? '' : `b${BAN}_`;                       // 태블릿에 기억하는 로그인도 반마다 따로
+const DB_ROOT = IN_SPACE ? `advent2026/sp_${SPACE}` : IS_HOME ? 'advent2026' : `advent2026/ban${BAN}`;   // 반마다 따로 저장되는 칸
+const LS_PREFIX = IN_SPACE ? `sp_${SPACE}_` : IS_HOME ? '' : `b${BAN}_`;   // 태블릿에 기억하는 로그인도 반마다 따로
 
 /* Firebase 실시간 데이터베이스 설정 — 비워 두면 '체험 모드'(이 기기에만 저장)로 움직여요.
    Firebase 콘솔 > 프로젝트 설정 > 내 앱(웹) 에서 복사해 붙여 넣으세요. */
@@ -2343,6 +2348,12 @@ const WORD_PRESETS = [
 
 /* ---------------- 상태 ---------------- */
 const APP = { me: null, settings: { ...DEFAULT_SCHEDULE, lock: false }, classStickers: {}, unsub: [] };
+const className = () => (APP.settings && APP.settings.className) || CLASS_NAME || '우리 반';
+function applyClassName(){
+  const n = className(); IDEAS[8][1] = `${n} 추억 한 장면`;
+  document.title = `${n} 어드벤트 캘린더`;
+  const lc = $('#land-class'); if (lc) lc.textContent = n;
+}
 
 /* ---------------- 날짜 ---------------- */
 const pad2 = n => String(n).padStart(2, '0');
@@ -2363,7 +2374,7 @@ const addDays = (s, k) => { const d = parseYMD(s); d.setDate(d.getDate() + k); r
 const shareDate = n => addDays(SHARE_START, n - 1);
 function shareOpenCount(){ const t = today(); if (t < SHARE_START) return 0; return Math.min(24, Math.round((parseYMD(t) - parseYMD(SHARE_START)) / 86400000) + 1); }
 function shareToday(){ const c = shareOpenCount(); return c >= 1 && shareDate(c) === today() ? c : null; }
-function shareURL(token){ const q = new URLSearchParams(); if (!IS_HOME) q.set('ban', BAN); q.set('s', token); return location.origin + location.pathname + '?' + q.toString(); }
+function shareURL(token){ const q = new URLSearchParams(); if (IN_SPACE) q.set('c', SPACE); else if (!IS_HOME) q.set('ban', BAN); q.set('s', token); return location.origin + location.pathname + '?' + q.toString(); }
 async function ensureShare(uid){
   let t = await DB.get(`users/${uid}/share`);
   if (!t){ t = DB.key() + Math.random().toString(36).slice(2, 8); await DB.set('shares/' + t, { uid, ts: Date.now() }); await DB.update('users/' + uid, { share: t }); }
@@ -2507,7 +2518,7 @@ async function flattenCard(data, board, W = 240){
    ========================================================= */
 let landingBuilt = false;
 function buildLanding(){
-  $('#land-class').textContent = CLASS_NAME;
+  $('#land-class').textContent = className();
   const st = $('#land-stage');
   if (!landingBuilt){
     const H = defaultHouse('mansion'); H.title = '메리 크리스마스!';
@@ -2588,7 +2599,7 @@ function login(uid, u, isNew){
   APP.unsub.forEach(f => f()); APP.unsub = [];
   APP.unsub.push(DB.on('stickers', v => { APP.classStickers = v || {}; if (APP.onStickers) APP.onStickers(); }));
   APP.unsub.push(DB.on(`users/${uid}/done`, v => { if (APP.me && APP.me.uid === uid){ APP.me.done = v || null; applyDone(); } }));
-  APP.unsub.push(DB.on('settings', v => { APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(v || {}) }; $('#e-lock').classList.toggle('hidden', !APP.settings.lock); }));
+  APP.unsub.push(DB.on('settings', v => { APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(v || {}) }; applyClassName(); $('#e-lock').classList.toggle('hidden', !APP.settings.lock); }));
   const meHTML = `${avatarImg(u.avatar, 38)}<b>${esc(u.name)}</b>`;
   $('#e-me').innerHTML = meHTML; $('#g-me').innerHTML = meHTML;
   openEditor().then(() => { if (isNew) openModal('m-guide'); });
@@ -2656,7 +2667,7 @@ async function openShareModal(){
   $('#sh-url').value = url; openModal('m-share');
   $('#sh-copy').onclick = async () => { toast(await copyText(url) ? '📋 링크를 복사했어요! 카톡이나 문자에 붙여 넣어요' : '링크 칸을 길게 눌러 복사해 주세요'); };
   $('#sh-send').classList.toggle('hidden', !navigator.share);
-  $('#sh-send').onclick = () => navigator.share && navigator.share({ title: `${APP.me.name}의 어드벤트 캘린더`, text: `${CLASS_NAME} ${APP.me.name}가 만든 크리스마스 어드벤트 캘린더예요! 12월 1일부터 하루에 하나씩 열어 보세요 🎄`, url }).catch(() => {});
+  $('#sh-send').onclick = () => navigator.share && navigator.share({ title: `${APP.me.name}의 어드벤트 캘린더`, text: `${className()} ${APP.me.name}가 만든 크리스마스 어드벤트 캘린더예요! 12월 1일부터 하루에 하나씩 열어 보세요 🎄`, url }).catch(() => {});
   $('#sh-open').onclick = () => window.open(url, '_blank');
 }
 $('#e-share').onclick = openShareModal; $('#dv-share').onclick = openShareModal;
@@ -3215,7 +3226,7 @@ async function openViewer(uid, o = {}){
   const shareMsg = oc ? `🎁 지금 <b>${oc}번 문</b>까지 열 수 있어요.<br>살짝 열린 문을 눌러 보세요!` : `🔒 아직 모든 문이 잠겨 있어요.<br><b>12월 1일</b>부터 하루에 하나씩 열려요!`;
   $('#v-side').innerHTML = `
     <div class="vs-who">${avatarImg(u.avatar, 64)}<div><b>${esc(u.name)}</b><small>문 속 ${Object.keys(V.thumbs).length}/24 채움</small></div></div>
-    ${V.share ? `<div class="vs-share">🎄 <b>${esc(CLASS_NAME)}</b> 친구가 직접 만든<br>크리스마스 어드벤트 캘린더예요</div>` : ''}
+    ${V.share ? `<div class="vs-share">🎄 <b>${esc(className())}</b> 친구가 직접 만든<br>크리스마스 어드벤트 캘린더예요</div>` : ''}
     <div class="vs-msg">${V.share ? shareMsg : V.owner ? '👁 내 달력 미리보기예요.<br>친구들에게는 <b>날짜가 된 문만</b> 열려요.' : V.all ? '🔑 선생님 보기: 모든 문을 열 수 있어요.' : oc ? `🎁 지금 <b>${oc}번 문</b>까지 열 수 있어요.<br>살짝 열린 문을 눌러 보세요!` : `🔒 아직 열린 문이 없어요.<br>${fmtDate(ds[0])}부터 열려요!`}
       ${!V.all && nx ? `<small>다음 문(${nx.n}번)은 ${fmtDate(nx.date)}에 열려요</small>` : ''}</div>
     <h4 class="sec-t">열 수 있는 문</h4>
@@ -3327,7 +3338,7 @@ $('#t-back').onclick = () => { buildLanding(); show('landing'); };
 async function openTeacherScreen(){
   show('teacher');
   const [users, settings, hearts, houses, stickers] = await Promise.all([DB.get('users'), DB.get('settings'), DB.get('hearts'), DB.get('houseThumbs'), DB.get('stickers')]);
-  APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(settings || {}) };
+  APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(settings || {}) }; applyClassName();
   G.users = users || {}; G.order = Object.keys(G.users).sort((a, b) => G.users[a].name.localeCompare(G.users[b].name, 'ko'));
   const hc = uid => { let c = 0; Object.values((hearts || {})[uid] || {}).forEach(d => c += Object.keys(d || {}).length); return c; };
   const ds = doorDates(), td = todayDoor(), oc = openCount(), st = APP.settings, tdOverride = LS.get('advent_testdate');
@@ -3336,6 +3347,10 @@ async function openTeacherScreen(){
       <div><b>오늘</b> ${fmtDate(today())} ${tdOverride ? '<em class="warn">미리보기 날짜</em>' : ''}<br>${td ? `🎁 오늘은 <b>${td}번 문</b>이 열리는 날` : '오늘 새로 열리는 문 없음'} · 지금까지 <b>${oc}개</b> 열림</div>
       <div class="row gap wrap"><button class="btn red" id="t-slides">📺 오늘의 문 슬라이드쇼</button><button class="btn green" id="t-overview">🗂️ 전체 한눈에 보기</button><button class="btn ${st.lock ? 'green' : ''}" id="t-lock">${st.lock ? '🔓 꾸미기 다시 열기' : '🔒 꾸미기 잠그기'}</button></div>
       <div class="mode-note">${DB.failed ? '⚠️ Firebase 연결 실패: 지금은 이 기기에만 저장돼요. 인터넷 연결을 확인하고 새로고침해 주세요.' : DB.mode === 'demo' ? '🧪 체험 모드: 데이터가 이 기기에만 저장돼요. 반 전체가 함께 쓰려면 파일 맨 위 FIREBASE_CONFIG를 채워 주세요.' : '☁️ Firebase에 연결되어 반 전체가 함께 쓰는 중'}</div>
+    </div>
+    <div class="t-card paper">
+      <h3>🏷️ 반 이름 <small>첫 화면과 공유 링크에 보여요</small></h3>
+      <div class="row gap wrap"><input class="inp" id="t-cname" maxlength="20" style="max-width:340px" value="${esc(className())}" placeholder="예) 6학년 2반"><button class="btn green" id="t-cname-ok">저장</button></div>
     </div>
     <div class="t-card paper">
       <h3>👩‍🎓 진행 현황 <small>${G.order.length}명</small></h3>
@@ -3380,6 +3395,7 @@ async function openTeacherScreen(){
     }
     if (e.target.closest('#t-test-ok')){ const v = $('#t-test').value; if (v){ LS.set('advent_testdate', v); toast(`${fmtDate(v)}인 것처럼 보여요`); openTeacherScreen(); } return; }
     if (e.target.closest('#t-test-off')){ LS.set('advent_testdate', null); toast('미리보기 날짜를 해제했어요'); openTeacherScreen(); return; }
+    if (e.target.closest('#t-cname-ok')){ const v = $('#t-cname').value.trim(); await DB.update('settings', { className: v || null }); toast('반 이름을 저장했어요'); openTeacherScreen(); return; }
     if (e.target.closest('#t-slides')){ openSlides(); return; }
     if (e.target.closest('#t-overview')){ openOverview(); return; }
     if (e.target.closest('#t-sample')){ e.target.disabled = true; e.target.textContent = '만드는 중…'; await makeSamples(3); openTeacherScreen(); }
@@ -3484,10 +3500,11 @@ async function makeSamples(k){
    시작
    ========================================================= */
 (async function boot(){
-  document.title = `${CLASS_NAME} 어드벤트 캘린더`;
+  if (!SPACE_OK){ show('landing'); $('#land-class').textContent = '🔒'; $('#land-dday').innerHTML = '😢 이 링크는 열 수 없어요.<br><small>링크를 다시 확인해 주세요</small>'; $$('.land-btns, #go-teacher').forEach(x => x.classList.add('hidden')); return; }
   await DB.init();
   if (DB.failed) toast('⚠️ 인터넷(Firebase) 연결이 안 됐어요. 새로고침해 주세요!', 6000);
   try { const s = await DB.get('settings'); APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(s || {}) }; } catch(e){}
+  applyClassName();
   const sTok = new URLSearchParams(location.search).get('s');
   if (sTok){ await openShareView(sTok); return; }
   buildLanding();
