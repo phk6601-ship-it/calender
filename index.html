@@ -819,6 +819,9 @@ const DEFAULT_SCHEDULE = { start: '2026-11-23', holidays: ['2026-12-25'], allOpe
 /* 공유 링크(친구·부모님)로 보는 사람: 12월 1일부터 하루에 하나씩 열려요 (n번 문 = 12월 n일). 그 전에는 모두 잠겨 있어요. */
 const SHARE_START = '2026-12-01';
 
+/* 문 속 아이디어 중 '다음 단계' 주제 */
+const NEXT_IDEA = '중학생이 되면 해 보고 싶은 것';
+
 /* =========================================================
    스티커 (모두 직접 그린 SVG) — viewBox 0 0 100 100
    ========================================================= */
@@ -2332,7 +2335,7 @@ const hashPin = (p) => { let h = 5381; for (const c of 'advent' + p) h = ((h << 
 const IDEAS = [
   ['🌟','올해 가장 행복했던 순간'],['🎁','내가 산타라면 주고 싶은 선물'],['💌','우리 반 친구에게 칭찬 한마디'],['⛄','나만의 눈사람 그리기'],
   ['❓','친구에게 내는 크리스마스 퀴즈'],['🍪','내가 좋아하는 겨울 간식'],['🎵','추천하는 겨울 노래'],['🎬','추천하는 크리스마스 영화'],
-  ['🏫',`${CLASS_NAME} 추억 한 장면`],['✉️','미래의 나에게 쓰는 편지'],['🎒','중학생이 되면 해 보고 싶은 것'],['🙋','친구들이 모르는 나의 TMI'],
+  ['🏫',`${CLASS_NAME} 추억 한 장면`],['✉️','미래의 나에게 쓰는 편지'],['🎒',NEXT_IDEA],['🙋','친구들이 모르는 나의 TMI'],
   ['🔮','친구가 받을 오늘의 운세'],['🎄','내가 꾸민 크리스마스 트리'],['🔍','숨은그림찾기 그리기'],['🙏','고마운 사람에게 한마디'],
   ['🧸','나의 최애 물건 소개'],['🏆','올해 나에게 주는 상장'],['😂','친구를 웃게 할 농담'],['🗓️','겨울 방학 계획'],
   ['🥛','내가 만든 쿠키 레시피'],['🐶','좋아하는 동물 그리기'],['🎯','2027년 나의 목표'],['🎉','크리스마스 카드 만들기'],
@@ -3200,7 +3203,7 @@ async function renderTodayBox(){
 /* ---------- 달력 보기 ---------- */
 const V = { uid: null, cal: null, board: null, thumbs: {}, owner: false, all: false, built: null, snow: null, back: 'gallery' };
 async function openViewer(uid, o = {}){
-  V.uid = uid; V.share = !!o.share; V.owner = !!o.owner; V.all = !!o.all || V.owner; V.back = o.back || (curScreen === 'teacher' ? 'teacher' : curScreen === 'edit' ? 'edit' : 'gallery');
+  V.uid = uid; V.share = !!o.share; V.owner = !!o.owner; V.all = !!o.all; V.back = o.back || (curScreen === 'teacher' ? 'teacher' : curScreen === 'edit' ? 'edit' : 'gallery');
   if (!G.users[uid]) G.users = await DB.get('users') || {};
   if (!G.order.length || !G.order.includes(uid)) G.order = Object.keys(G.users);
   show('view');
@@ -3227,7 +3230,7 @@ async function openViewer(uid, o = {}){
   $('#v-side').innerHTML = `
     <div class="vs-who">${avatarImg(u.avatar, 64)}<div><b>${esc(u.name)}</b><small>문 속 ${Object.keys(V.thumbs).length}/24 채움</small></div></div>
     ${V.share ? `<div class="vs-share">🎄 <b>${esc(className())}</b> 친구가 직접 만든<br>크리스마스 어드벤트 캘린더예요</div>` : ''}
-    <div class="vs-msg">${V.share ? shareMsg : V.owner ? '👁 내 달력 미리보기예요.<br>친구들에게는 <b>날짜가 된 문만</b> 열려요.' : V.all ? '🔑 선생님 보기: 모든 문을 열 수 있어요.' : oc ? `🎁 지금 <b>${oc}번 문</b>까지 열 수 있어요.<br>살짝 열린 문을 눌러 보세요!` : `🔒 아직 열린 문이 없어요.<br>${fmtDate(ds[0])}부터 열려요!`}
+    <div class="vs-msg">${V.share ? shareMsg : V.owner ? (oc ? `👁 내 달력이에요.<br>내 달력도 <b>날짜가 된 문만</b> 열 수 있어요.<br>지금은 <b>${oc}번 문</b>까지 열려요.` : `👁 내 달력이에요.<br>내 달력도 <b>날짜가 된 문만</b> 열 수 있어요.<br>${fmtDate(ds[0])}부터 열려요!`) : V.all ? '🔑 선생님 보기: 모든 문을 열 수 있어요.' : oc ? `🎁 지금 <b>${oc}번 문</b>까지 열 수 있어요.<br>살짝 열린 문을 눌러 보세요!` : `🔒 아직 열린 문이 없어요.<br>${fmtDate(ds[0])}부터 열려요!`}
       ${!V.all && nx ? `<small>다음 문(${nx.n}번)은 ${fmtDate(nx.date)}에 열려요</small>` : ''}</div>
     <h4 class="sec-t">열 수 있는 문</h4>
     <div class="vs-doors">${opened.length ? opened.map(n => `<button class="vs-d" data-n="${n}"><img src="${V.thumbs['d' + n]}" alt=""><b>${n}</b></button>`).join('') : '<p class="hint">아직 없어요</p>'}</div>
