@@ -2351,6 +2351,9 @@ const WORD_PRESETS = [
 
 /* ---------------- 상태 ---------------- */
 const APP = { me: null, settings: { ...DEFAULT_SCHEDULE, lock: false }, classStickers: {}, unsub: [] };
+/* 이름이 없는(지워졌다가 일부만 다시 저장된) 학생 기록은 건너뛰기 */
+const validUsers = (o) => { const r = {}; Object.entries(o || {}).forEach(([k, u]) => { if (u && typeof u.name === 'string' && u.name) r[k] = u; }); return r; };
+const byName = (users) => (a, b) => String(users[a].name).localeCompare(String(users[b].name), 'ko');
 const shareOn = () => !!(APP.settings && APP.settings.shareStickers);
 const className = () => (APP.settings && APP.settings.className) || CLASS_NAME || '우리 반';
 function applyClassName(){
@@ -2556,7 +2559,7 @@ $('#c-go').onclick = async () => {
   const name = $('#c-name').value.trim().replace(/\s+/g, ' '), pin = $('#c-pin').value, avatar = ($('#c-avatars .av-btn.on') || {}).dataset?.a || 'bear';
   if (!name){ toast('이름을 써 주세요 ✏️'); return; }
   if (!/^\d{4}$/.test(pin)){ toast('비밀번호는 숫자 4개예요 🔢'); return; }
-  const users = await DB.get('users') || {};
+  const users = validUsers(await DB.get('users'));
   if (Object.values(users).some(u => u.name === name)){ toast('이미 있는 이름이에요. 다른 이름을 써 주세요 (예: 김지우2)'); return; }
   const uid = DB.key();
   const me = { name, pin: hashPin(pin), avatar, ts: Date.now(), filled: 0 };
@@ -2567,7 +2570,7 @@ $('#c-go').onclick = async () => {
 };
 $('#go-pick').onclick = async () => {
   show('pick');
-  const users = await DB.get('users') || {};
+  const users = validUsers(await DB.get('users'));
   const list = Object.entries(users).sort((a, b) => a[1].name.localeCompare(b[1].name, 'ko'));
   $('#pick-grid').innerHTML = list.length ? list.map(([id, u]) => `<button class="pick-card" data-id="${id}">${avatarImg(u.avatar, 72)}<b>${esc(u.name)}</b></button>`).join('')
     : `<div class="empty paper">아직 아무도 없어요. <br>‘처음 왔어요’로 이름을 먼저 만들어 주세요!</div>`;
@@ -2602,6 +2605,7 @@ function login(uid, u, isNew){
   APP.me = { uid, ...u }; LS.set('advent_uid', uid);
   APP.unsub.forEach(f => f()); APP.unsub = [];
   APP.unsub.push(DB.on('stickers', v => { APP.classStickers = v || {}; if (APP.onStickers) APP.onStickers(); }));
+  APP.unsub.push(DB.on(`users/${uid}/name`, v => { if (v == null && APP.me && APP.me.uid === uid){ E.dirty = false; D.dirty = false; APP.unsub.forEach(f => f()); APP.unsub = []; APP.me = null; LS.set('advent_uid', null); closeModal('m-door'); buildLanding(); show('landing'); toast('선생님이 이 이름을 지웠어요. 처음 왔어요로 다시 만들어 주세요', 4000); } }));
   APP.unsub.push(DB.on(`users/${uid}/done`, v => { if (APP.me && APP.me.uid === uid){ APP.me.done = v || null; applyDone(); } }));
   APP.unsub.push(DB.on('settings', v => { const was = shareOn(); APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(v || {}) }; applyClassName(); if (was !== shareOn() && APP.onStickers) APP.onStickers(true); $('#e-lock').classList.toggle('hidden', !APP.settings.lock); }));
   const meHTML = `${avatarImg(u.avatar, 38)}<b>${esc(u.name)}</b>`;
@@ -3034,7 +3038,7 @@ function panelMedia(P){
 }
 function doorDirty(){ D.dirty = true; $('#d-save').textContent = '저장 중…'; clearTimeout(D.saveT); D.saveT = setTimeout(() => saveDoor(), 1500); }
 async function saveDoor(){
-  clearTimeout(D.saveT); if (!D.board || !D.n || !D.dirty) return;
+  clearTimeout(D.saveT); if (!D.board || !D.n || !D.dirty || !APP.me) return;
   const n = D.n, uid = APP.me.uid, b = D.board;
   const d = { ...D.data, ...b.data(), ts: Date.now() };
   D.dirty = false; APP.pending = (APP.pending || 0) + 1;
@@ -3180,8 +3184,8 @@ async function openGallery(){
   LS.set('advent_visit_' + APP.me.uid, '1');
   $('#g-grid').innerHTML = '<div class="loading">🎄 마을을 불러오는 중…</div>';
   const [users, houses, hearts] = await Promise.all([DB.get('users'), DB.get('houseThumbs'), DB.get('hearts')]);
-  G.users = users || {}; G.houses = houses || {}; G.hearts = hearts || {};
-  G.order = Object.keys(G.users).sort((a, b) => (a === APP.me.uid ? -1 : b === APP.me.uid ? 1 : G.users[a].name.localeCompare(G.users[b].name, 'ko')));
+  G.users = validUsers(users); G.houses = houses || {}; G.hearts = hearts || {};
+  G.order = Object.keys(G.users).sort((a, b) => (a === APP.me.uid ? -1 : b === APP.me.uid ? 1 : byName(G.users)(a, b)));
   const heartCount = uid => { let c = 0; Object.values(G.hearts[uid] || {}).forEach(d => c += Object.keys(d || {}).length); return c; };
   $('#g-grid').innerHTML = G.order.map(uid => { const u = G.users[uid], th = G.houses[uid];
     return `<button class="g-card ${uid === APP.me.uid ? 'mine' : ''}" data-uid="${uid}">
@@ -3207,7 +3211,7 @@ async function renderTodayBox(){
 const V = { uid: null, cal: null, board: null, thumbs: {}, owner: false, all: false, built: null, snow: null, back: 'gallery' };
 async function openViewer(uid, o = {}){
   V.uid = uid; V.share = !!o.share; V.owner = !!o.owner; V.all = !!o.all; V.back = o.back || (curScreen === 'teacher' ? 'teacher' : curScreen === 'edit' ? 'edit' : 'gallery');
-  if (!G.users[uid]) G.users = await DB.get('users') || {};
+  if (!G.users[uid]) G.users = validUsers(await DB.get('users'));
   if (!G.order.length || !G.order.includes(uid)) G.order = Object.keys(G.users);
   show('view');
   const u = G.users[uid] || { name: '?', avatar: 'star' };
@@ -3343,9 +3347,13 @@ $('#go-teacher').onclick = async () => {
 $('#t-back').onclick = () => { buildLanding(); show('landing'); };
 async function openTeacherScreen(){
   show('teacher');
+  try { await renderTeacherScreen(); }
+  catch(e){ console.error(e); $('#t-body').innerHTML = `<div class="t-card paper"><h3>😢 선생님 메뉴를 불러오지 못했어요</h3><p>인터넷 연결을 확인하고 새로고침해 주세요.</p><p class="hint">${esc(e && e.message || e)}</p><button class="btn" onclick="location.reload()">🔄 새로고침</button></div>`; }
+}
+async function renderTeacherScreen(){
   const [users, settings, hearts, houses, stickers] = await Promise.all([DB.get('users'), DB.get('settings'), DB.get('hearts'), DB.get('houseThumbs'), DB.get('stickers')]);
   APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(settings || {}) }; applyClassName();
-  G.users = users || {}; G.order = Object.keys(G.users).sort((a, b) => G.users[a].name.localeCompare(G.users[b].name, 'ko'));
+  G.users = validUsers(users); G.order = Object.keys(G.users).sort(byName(G.users));
   const hc = uid => { let c = 0; Object.values((hearts || {})[uid] || {}).forEach(d => c += Object.keys(d || {}).length); return c; };
   const ds = doorDates(), td = todayDoor(), oc = openCount(), st = APP.settings, tdOverride = LS.get('advent_testdate');
   $('#t-body').innerHTML = `
