@@ -2351,6 +2351,7 @@ const WORD_PRESETS = [
 
 /* ---------------- 상태 ---------------- */
 const APP = { me: null, settings: { ...DEFAULT_SCHEDULE, lock: false }, classStickers: {}, unsub: [] };
+const shareOn = () => !!(APP.settings && APP.settings.shareStickers);
 const className = () => (APP.settings && APP.settings.className) || CLASS_NAME || '우리 반';
 function applyClassName(){
   const n = className(); IDEAS[8][1] = `${n} 추억 한 장면`;
@@ -2602,7 +2603,7 @@ function login(uid, u, isNew){
   APP.unsub.forEach(f => f()); APP.unsub = [];
   APP.unsub.push(DB.on('stickers', v => { APP.classStickers = v || {}; if (APP.onStickers) APP.onStickers(); }));
   APP.unsub.push(DB.on(`users/${uid}/done`, v => { if (APP.me && APP.me.uid === uid){ APP.me.done = v || null; applyDone(); } }));
-  APP.unsub.push(DB.on('settings', v => { APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(v || {}) }; applyClassName(); $('#e-lock').classList.toggle('hidden', !APP.settings.lock); }));
+  APP.unsub.push(DB.on('settings', v => { const was = shareOn(); APP.settings = { ...DEFAULT_SCHEDULE, lock: false, ...(v || {}) }; applyClassName(); if (was !== shareOn() && APP.onStickers) APP.onStickers(true); $('#e-lock').classList.toggle('hidden', !APP.settings.lock); }));
   const meHTML = `${avatarImg(u.avatar, 38)}<b>${esc(u.name)}</b>`;
   $('#e-me').innerHTML = meHTML; $('#g-me').innerHTML = meHTML;
   openEditor().then(() => { if (isNew) openModal('m-guide'); });
@@ -2853,7 +2854,8 @@ function panelFill(){
 let stkCat = 'xmas';
 function panelSticker(P, board, where){
   const mine = Object.entries(APP.classStickers || {}).sort((a, b) => (b[1].ts || 0) - (a[1].ts || 0));
-  const cats = [...ART.stickerCats.map(c => [c.id, c.name]), ['words', '글자'], ['class', `우리반 (${mine.length})`]];
+  if (!shareOn() && stkCat === 'class') stkCat = 'xmas';
+  const cats = [...ART.stickerCats.map(c => [c.id, c.name]), ['words', '글자'], ...(shareOn() ? [['class', `우리반 (${mine.length})`]] : [])];
   const grid = () => {
     if (stkCat === 'words') return `<div class="word-grid">${WORD_PRESETS.map((w, i) => `<button class="word-btn" data-w="${i}" style="font-family:${fontCSS(w[1])};color:${w[3] === 'ribbon' ? '#fff' : w[2]};${w[3] === 'ribbon' ? 'background:#c8323c' : ''}">${esc(w[0])}</button>`).join('')}</div>`;
     if (stkCat === 'class') return mine.length ? `<div class="stk-grid">${mine.map(([id, s]) => `<button class="stk" data-cs="${id}" title="${esc(s.by || '')}"><img src="${s.src}" alt=""><small>${esc(s.by || '')}</small></button>`).join('')}</div>`
@@ -2873,7 +2875,7 @@ function panelSticker(P, board, where){
       <button class="btn sm gold" data-act="upload">🖼️ 그림 올려 스티커로</button>
     </div>
     ${where === 'house' ? `<div class="next-hint">손그림도 그려 볼까요? <button class="btn green sm" data-goto="draw">5단계 그리기 →</button></div>` : ''}`;
-  APP.onStickers = () => { if (stkCat === 'class' && P.isConnected && P.querySelector('.stk-box')) panelSticker(P, board, where); };
+  APP.onStickers = force => { if ((force || stkCat === 'class') && P.isConnected && P.querySelector('.stk-box')) panelSticker(P, board, where); };
   P.onclick = async e => {
     const g = e.target.closest('[data-goto]'); if (g) return setTab(g.dataset.goto);
     const cat = e.target.closest('[data-cat]'); if (cat){ stkCat = cat.dataset.cat; panelSticker(P, board, where); return; }
@@ -3116,7 +3118,7 @@ function openPhoto(board, mode){
   PH.frame = mode === 'sticker' ? 'sticker' : 'polaroid';
   $('#p-title').textContent = mode === 'sticker' ? '🖼️ 그림을 올려 스티커 만들기' : '📷 사진 붙이기';
   $('#p-white').checked = mode === 'sticker';
-  $('#p-share-row').classList.toggle('hidden', mode !== 'sticker');
+  $('#p-share-row').classList.toggle('hidden', mode !== 'sticker' || !shareOn());
   $('#p-frames').innerHTML = PHOTO_FRAMES.map(([f, l]) => `<button class="chip ${f === PH.frame ? 'on' : ''}" data-f="${f}">${l}</button>`).join('');
   $('#p-prev').innerHTML = `<button class="btn gold big" id="p-pick">🖼️ 사진 고르기</button>`;
   $('#p-ok').disabled = true;
@@ -3141,10 +3143,11 @@ function bakePreview(){
 $('#p-ok').onclick = async () => {
   if (!PH.result) return;
   PH.board.add({ t: 'img', src: PH.result.src, bw: PH.result.bw, bh: PH.result.bh });
-  if (PH.mode === 'sticker' && $('#p-share').checked) await shareSticker(PH.result);
+  if (PH.mode === 'sticker' && shareOn() && $('#p-share').checked) await shareSticker(PH.result);
   closeModal('m-photo');
 };
 async function shareSticker(r){
+  if (!shareOn()) return;
   try { await DB.set('stickers/' + DB.key(), { src: r.src, bw: r.bw, bh: r.bh, by: APP.me.name, uid: APP.me.uid, ts: Date.now() }); toast('⭐ 우리반 스티커함에도 올렸어요!'); } catch(e){}
 }
 
@@ -3378,7 +3381,13 @@ async function openTeacherScreen(){
       <div class="row gap wrap"><input type="date" class="inp" id="t-test" value="${tdOverride || ''}"><button class="btn" id="t-test-ok">적용</button><button class="btn ghost" id="t-test-off">해제</button></div>
     </div>
     <div class="t-card paper">
-      <h3>⭐ 우리반 스티커함 <small>학생들이 올린 스티커 · 눌러서 지울 수 있어요</small></h3>
+      <h3>⭐ 우리반 스티커함 <small>학생들이 만든 스티커를 반 전체가 같이 쓰는 곳</small></h3>
+      <div class="row gap wrap" style="margin-bottom:10px">
+        <button class="btn ${shareOn() ? '' : 'green'}" id="t-share-tog">${shareOn() ? '🚫 스티커함 금지하기' : '✅ 스티커함 허용하기'}</button>
+        <span class="hint">${shareOn() ? '지금은 <b>허용</b> — 학생이 만든 스티커가 반 전체에 공유돼요' : '지금은 <b>금지</b> — 학생이 만든 스티커는 자기 달력에만 붙고, 우리반 탭도 보이지 않아요'}</span>
+        ${Object.keys(stickers || {}).length ? `<button class="btn red" id="t-stk-clear">🗑 스티커함 모두 지우기 (${Object.keys(stickers).length}개)</button>` : ''}
+      </div>
+      <p class="hint">스티커를 하나씩 눌러서 지울 수도 있어요.</p>
       <div class="stk-grid t-stk">${Object.entries(stickers || {}).map(([id, x]) => `<button class="stk" data-sdel="${id}" title="지우기"><img src="${x.src}" alt=""><small>${esc(x.by || '')} ✕</small></button>`).join('') || '<p class="hint">아직 없어요</p>'}</div>
     </div>
     ${DB.mode === 'demo' ? `<div class="t-card paper"><h3>🧪 체험용</h3><p class="hint">화면 확인을 위해 샘플 친구 달력을 만들어요.</p><button class="btn gold" id="t-sample">샘플 친구 3명 만들기</button></div>` : ''}`;
@@ -3398,6 +3407,8 @@ async function openTeacherScreen(){
     }
     if (e.target.closest('#t-test-ok')){ const v = $('#t-test').value; if (v){ LS.set('advent_testdate', v); toast(`${fmtDate(v)}인 것처럼 보여요`); openTeacherScreen(); } return; }
     if (e.target.closest('#t-test-off')){ LS.set('advent_testdate', null); toast('미리보기 날짜를 해제했어요'); openTeacherScreen(); return; }
+    if (e.target.closest('#t-share-tog')){ await DB.update('settings', { shareStickers: !shareOn() }); toast(shareOn() ? '스티커함을 금지했어요' : '스티커함을 허용했어요'); openTeacherScreen(); return; }
+    if (e.target.closest('#t-stk-clear')){ if (await confirmBox(`우리반 스티커함의 스티커 <b>${Object.keys(stickers).length}개</b>를 모두 지울까요?<br><small>이미 달력에 붙인 곳에는 남아 있어요</small>`)){ await DB.remove('stickers'); toast('스티커함을 비웠어요'); openTeacherScreen(); } return; }
     if (e.target.closest('#t-cname-ok')){ const v = $('#t-cname').value.trim(); await DB.update('settings', { className: v || null }); toast('반 이름을 저장했어요'); openTeacherScreen(); return; }
     if (e.target.closest('#t-slides')){ openSlides(); return; }
     if (e.target.closest('#t-overview')){ openOverview(); return; }
